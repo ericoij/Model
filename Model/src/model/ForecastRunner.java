@@ -26,17 +26,19 @@ public final class ForecastRunner {
 		Balloon reader = new Balloon(input);
 		reader.storeValues();
 		List<Location> observations = reader.getObservations();
-		GridState analysis = Analysis.build(observations, SOUTH, NORTH, WEST, EAST, SPACING_DEGREES);
-		ForecastWriter.writeCsv(analysis, output.resolve("analysis-000.csv"));
+		AtmosphereState analysis = AtmosphericAnalysis.build(
+				observations, SOUTH, NORTH, WEST, EAST, SPACING_DEGREES);
+		ForecastWriter.writeAtmosphereCsv(analysis, output.resolve("analysis-000.csv"));
 
-		Physics physics = new Physics();
+		HydrostaticModel physics = new HydrostaticModel();
 		for (int hour = 1; hour <= hours; hour++) {
-			GridState forecast = physics.forecastHours(analysis, hour);
-			ForecastWriter.writeCsv(forecast,
+			AtmosphereState forecast = physics.forecastHours(analysis, hour);
+			ForecastWriter.writeAtmosphereCsv(forecast,
 					output.resolve(String.format("forecast-%03d.csv", hour)));
-			System.out.printf("hour %02d: max wind %.1f m/s%n", hour, forecast.maxWindSpeed());
+			System.out.printf("hour %02d: max wind %.1f m/s, max |omega| %.3f Pa/s%n",
+					hour, forecast.maxWindSpeed(), forecast.maxAbsOmega());
 		}
-		System.out.printf("Wrote %d-hour 500 hPa forecast from %d time-aligned observations to %s%n",
-				hours, analysis.observationCount(), output.toAbsolutePath());
+		System.out.printf("Wrote %d-hour five-level forecast from %d time-aligned 500 hPa observations to %s%n",
+				hours, analysis.level(500).observationCount(), output.toAbsolutePath());
 	}
 }

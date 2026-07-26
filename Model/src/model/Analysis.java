@@ -20,9 +20,14 @@ public final class Analysis {
 
 	public static GridState build(List<Location> input, double south, double north,
 			double west, double east, double spacingDeg) {
+		return buildLevel(input, 500, south, north, west, east, spacingDeg);
+	}
+
+	public static GridState buildLevel(List<Location> input, int pressureHpa, double south, double north,
+			double west, double east, double spacingDeg) {
 		List<Location> usable = input.stream()
-				.filter(location -> location.getFiveHundred() != null)
-				.filter(location -> location.getFiveHundred().isForecastUsable())
+				.filter(location -> levelAt(location, pressureHpa) != null)
+				.filter(location -> levelAt(location, pressureHpa).isForecastUsable())
 				.filter(location -> location.getLatitude() >= south - 8 && location.getLatitude() <= north + 8)
 				.filter(location -> location.getLongitude() >= west - 12 && location.getLongitude() <= east + 12)
 				.toList();
@@ -36,10 +41,10 @@ public final class Analysis {
 			throw new IllegalArgumentException("Fewer than four observations share a usable analysis cycle");
 		}
 
-		GridState grid = new GridState(south, north, west, east, spacingDeg, cycle, aligned.size());
+		GridState grid = new GridState(south, north, west, east, spacingDeg, cycle, aligned.size(), pressureHpa);
 		for (int row = 0; row < grid.rows(); row++) {
 			for (int column = 0; column < grid.columns(); column++) {
-				fillCell(grid, row, column, aligned);
+				fillCell(grid, row, column, aligned, pressureHpa);
 			}
 		}
 		// Radiosondes are sparse relative to this grid. Gentle passes suppress
@@ -77,7 +82,8 @@ public final class Analysis {
 				.toList();
 	}
 
-	private static void fillCell(GridState grid, int row, int column, List<Location> observations) {
+	private static void fillCell(GridState grid, int row, int column, List<Location> observations,
+			int pressureHpa) {
 		double latitude = grid.latitude(row);
 		double longitude = grid.longitude(column);
 		List<WeightedObservation> nearest = new ArrayList<>();
@@ -98,7 +104,7 @@ public final class Analysis {
 		for (WeightedObservation item : nearest) {
 			double weight = 1.0 / (item.distanceKm * item.distanceKm
 					+ WEIGHT_FLOOR_KM * WEIGHT_FLOOR_KM);
-			Level level = item.location.getFiveHundred();
+			Level level = levelAt(item.location, pressureHpa);
 			WindVector wind = level.windVector();
 			u += wind.getU() * weight;
 			v += wind.getV() * weight;
@@ -115,6 +121,20 @@ public final class Analysis {
 		grid.height[row][column] = height / totalWeight;
 		grid.temperature[row][column] = temperature / totalWeight;
 		grid.humidity[row][column] = humidityWeight == 0 ? 50 : humidity / humidityWeight;
+	}
+
+	static Level levelAt(Location location, int pressureHpa) {
+		return switch (pressureHpa) {
+			case 1000 -> location.getOneThousand();
+			case 925 -> location.getNineTwentyFive();
+			case 850 -> location.getEightFifty();
+			case 700 -> location.getSevenHundred();
+			case 500 -> location.getFiveHundred();
+			case 300 -> location.getThreeHundred();
+			case 250 -> location.getTwoFifty();
+			case 200 -> location.getTwoHundred();
+			default -> throw new IllegalArgumentException("Unsupported pressure level: " + pressureHpa);
+		};
 	}
 
 	static double distanceKm(double lat1, double lon1, double lat2, double lon2) {

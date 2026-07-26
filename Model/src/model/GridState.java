@@ -13,6 +13,7 @@ public final class GridState {
 	private final int columns;
 	private final Instant validTime;
 	private final int observationCount;
+	private final int pressureHpa;
 	final double[][] u;
 	final double[][] v;
 	final double[][] height;
@@ -21,6 +22,11 @@ public final class GridState {
 
 	public GridState(double south, double north, double west, double east, double spacingDeg,
 			Instant validTime, int observationCount) {
+		this(south, north, west, east, spacingDeg, validTime, observationCount, 500);
+	}
+
+	public GridState(double south, double north, double west, double east, double spacingDeg,
+			Instant validTime, int observationCount, int pressureHpa) {
 		if (spacingDeg <= 0 || north <= south || east <= west) {
 			throw new IllegalArgumentException("Invalid grid bounds or spacing");
 		}
@@ -31,6 +37,7 @@ public final class GridState {
 		this.columns = (int) Math.round((east - west) / spacingDeg) + 1;
 		this.validTime = validTime;
 		this.observationCount = observationCount;
+		this.pressureHpa = pressureHpa;
 		u = new double[rows][columns];
 		v = new double[rows][columns];
 		height = new double[rows][columns];
@@ -40,7 +47,7 @@ public final class GridState {
 
 	private GridState(GridState source, Instant newValidTime) {
 		this(source.south, source.north(), source.west, source.east(), source.spacingDeg,
-				newValidTime, source.observationCount);
+				newValidTime, source.observationCount, source.pressureHpa);
 		copyFields(source, this);
 	}
 
@@ -73,6 +80,7 @@ public final class GridState {
 	public double longitude(int column) { return west + column * spacingDeg; }
 	public Instant validTime() { return validTime; }
 	public int observationCount() { return observationCount; }
+	public int pressureHpa() { return pressureHpa; }
 
 	public double windSpeed(int row, int column) {
 		return Math.hypot(u[row][column], v[row][column]);
@@ -163,8 +171,8 @@ public final class GridState {
 				if (speed > 200) {
 					throw new IllegalStateException("Forecast wind exceeded 200 m/s at " + row + "," + column);
 				}
-				if (height[row][column] < 3500 || height[row][column] > 7000) {
-					throw new IllegalStateException("Invalid 500 hPa height at " + row + "," + column);
+				if (height[row][column] < -500 || height[row][column] > 15000) {
+					throw new IllegalStateException("Invalid pressure-level height at " + row + "," + column);
 				}
 				if (temperature[row][column] < 180 || temperature[row][column] > 330) {
 					throw new IllegalStateException("Invalid 500 hPa temperature at " + row + "," + column);

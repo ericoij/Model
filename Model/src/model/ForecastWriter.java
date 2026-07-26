@@ -11,30 +11,54 @@ public final class ForecastWriter {
 	}
 
 	public static void writeCsv(GridState grid, Path path) {
+		writeGridCsv(grid, null, path);
+	}
+
+	public static void writeAtmosphereCsv(AtmosphereState atmosphere, Path path) {
 		try {
 			Files.createDirectories(path.toAbsolutePath().getParent());
 			try (BufferedWriter writer = Files.newBufferedWriter(path)) {
 				writer.write("valid_time,latitude,longitude,pressure_hpa,height_m,"
-						+ "wind_speed_ms,wind_direction_deg,temperature_c,relative_humidity_pct,u_ms,v_ms");
+						+ "wind_speed_ms,wind_direction_deg,temperature_c,relative_humidity_pct,"
+						+ "u_ms,v_ms,omega_pa_s");
 				writer.newLine();
-				for (int row = 0; row < grid.rows(); row++) {
-					for (int column = 0; column < grid.columns(); column++) {
-						WindVector wind = WindVector.fromComponents(
-								grid.u[row][column], grid.v[row][column]);
-						writer.write(String.format(Locale.ROOT,
-								"%s,%.3f,%.3f,500,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
-								grid.validTime() == null ? "" : grid.validTime(),
-								grid.latitude(row), grid.longitude(column),
-								grid.height[row][column], wind.getSpeed(), wind.getDirection(),
-								grid.temperature[row][column] - 273.15,
-								grid.humidity[row][column],
-								wind.getU(), wind.getV()));
-						writer.newLine();
-					}
+				for (int pressure : AtmosphereState.STANDARD_LEVELS_HPA) {
+					writeRows(atmosphere.level(pressure), atmosphere.omega(pressure), writer);
 				}
 			}
 		} catch (IOException ex) {
 			throw new IllegalStateException("Unable to write forecast to " + path.toAbsolutePath(), ex);
+		}
+	}
+
+	private static void writeGridCsv(GridState grid, double[][] omega, Path path) {
+		try {
+			Files.createDirectories(path.toAbsolutePath().getParent());
+			try (BufferedWriter writer = Files.newBufferedWriter(path)) {
+				writer.write("valid_time,latitude,longitude,pressure_hpa,height_m,"
+						+ "wind_speed_ms,wind_direction_deg,temperature_c,relative_humidity_pct,"
+						+ "u_ms,v_ms,omega_pa_s");
+				writer.newLine();
+				writeRows(grid, omega, writer);
+			}
+		} catch (IOException ex) {
+			throw new IllegalStateException("Unable to write forecast to " + path.toAbsolutePath(), ex);
+		}
+	}
+
+	private static void writeRows(GridState grid, double[][] omega, BufferedWriter writer) throws IOException {
+		for (int row = 0; row < grid.rows(); row++) {
+			for (int column = 0; column < grid.columns(); column++) {
+				WindVector wind = WindVector.fromComponents(grid.u[row][column], grid.v[row][column]);
+				writer.write(String.format(Locale.ROOT,
+						"%s,%.3f,%.3f,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f",
+						grid.validTime() == null ? "" : grid.validTime(),
+						grid.latitude(row), grid.longitude(column), grid.pressureHpa(),
+						grid.height[row][column], wind.getSpeed(), wind.getDirection(),
+						grid.temperature[row][column] - 273.15, grid.humidity[row][column],
+						wind.getU(), wind.getV(), omega == null ? 0 : omega[row][column]));
+				writer.newLine();
+			}
 		}
 	}
 }

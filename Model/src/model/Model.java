@@ -10,4 +10,10 @@ public final class Model {
 		GridState analysis = Analysis.build(observations, 30, 50, -120, -80, 0.5);
 		return new Physics().forecastHours(analysis, hours);
 	}
+
+	public AtmosphereState forecastAtmosphere(List<Location> observations, int hours) {
+		AtmosphereState analysis = AtmosphericAnalysis.build(
+				observations, 30, 50, -120, -80, 0.5);
+		return new HydrostaticModel().forecastHours(analysis, hours);
+	}
 }

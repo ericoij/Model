@@ -18,10 +18,14 @@ public final class Physics {
 	private static final double GRAVITY = 9.80665;
 
 	public GridState advance(GridState initial, int steps, double timeStepSeconds) {
+		return advance(initial, initial, steps, timeStepSeconds);
+	}
+
+	public GridState advance(GridState initial, GridState fixedBoundary, int steps, double timeStepSeconds) {
 		if (steps < 0 || timeStepSeconds <= 0 || !Double.isFinite(timeStepSeconds)) {
 			throw new IllegalArgumentException("Invalid forecast step configuration");
 		}
-		GridState boundary = initial.copy();
+		GridState boundary = fixedBoundary.copy();
 		GridState current = initial.copy();
 		for (int step = 0; step < steps; step++) {
 			current = step(current, boundary, timeStepSeconds);
