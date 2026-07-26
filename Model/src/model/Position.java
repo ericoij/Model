@@ -9,9 +9,8 @@ public class Position {
 	}
 
 	public Position(double lat, double lon) {
-		setLongitude(lon);
-		setLatitude(lat);
-
+		this.longitude = lon;
+		this.latitude = lat;
 	}
 
 	public double getLatitude() {

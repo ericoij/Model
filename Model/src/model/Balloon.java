@@ -1,111 +1,138 @@
 package model;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.List;
 
+/**
+ * Reader for NOAA IGRA v2/v2.2 fixed-width sounding data.
+ */
 public class Balloon {
+	private static final double MISSING_LIMIT = -8888;
 
-	public ArrayList<Level> levels = new ArrayList<Level>();
-	public Location activeLocation;
-	String lat, lon;
-	Level ActiveLevel;
+	private final Path inputPath;
+	private Location activeLocation;
+	private final List<Location> observations = new ArrayList<>();
 
 	public Balloon() {
+		this(Path.of("balloon.d"));
+	}
 
+	public Balloon(Path inputPath) {
+		this.inputPath = inputPath;
 	}
 
 	public void storeValues() {
-		int i = 0;
-		String buffer = "";
-		String lineType = "";
-		String value = "";
+		storeValues(inputPath);
+	}
 
-		try {
-			FileReader fr = new FileReader("/Users/ericoij/Desktop/balloon/balloon.d");
-			BufferedReader br = new BufferedReader(fr);
-			// int i = 0;
-
-			while ((buffer = br.readLine()) != null) {
-				ActiveLevel = new Level();
-
-				if (buffer.isEmpty())
-					lineType = "empty";
-				else if (buffer.charAt(0) == '1')
-					lineType = "level";
-				else if (buffer.charAt(0) == '#') {
-					lineType = "station";
-					// System.out.println("empty :|" + buffer + "|");
-				} else
-					lineType = "BadRead";
-				System.out.println(lineType);
-				if (lineType == "station") {
-					if (buffer.length() == 71) {
-						lat = buffer.substring(56, 62).replaceAll(" ", "");
-						lon = buffer.substring(63, 71).replaceAll(" ", "");
-						// Position local = new Position(
-						double latitude = Integer.parseInt(lat) * Math.pow(10, -4);
-						double longitude = Integer.parseInt(lon) * Math.pow(10, -4);
-						// Position local = new Position(latitude, longitude);
-						activeLocation = new Location(latitude, longitude);
-						System.out.println("Made a new station, Lat =" + lat + "  Long = " + lon);
-					}
-
-				} else if (lineType == "level") {
-					System.out.println("writing level" + buffer);
-					value = buffer.substring(9, 15).replaceAll(" ", "");
-					ActiveLevel.setPressure((double) Integer.parseInt(value));
-					value = buffer.substring(16, 21).replaceAll(" ", "");
-					ActiveLevel.setGeoHeight((double) Integer.parseInt(value));
-					value = buffer.substring(22, 27).replaceAll(" ", "");
-					ActiveLevel.setTempurature((double) Integer.parseInt(value));
-					value = buffer.substring(28, 33).replaceAll(" ", "");
-					ActiveLevel.setRelativeHumidity((double) Integer.parseInt(value));
-					value = buffer.substring(34, 39).replaceAll(" ", "");
-					ActiveLevel.setDewPointDepression((double) Integer.parseInt(value));
-					value = buffer.substring(40, 45).replaceAll(" ", "");
-					ActiveLevel.setWindDirection((double) Integer.parseInt(value));
-					value = buffer.substring(46, 51).replaceAll(" ", "");
-					ActiveLevel.setWindSpeed((double) Integer.parseInt(value));
-					// ActiveLevel.showLevel();
-					// System.out.println("made it to add level");
-					if (ActiveLevel != new Level())
-						storeLevel(ActiveLevel);
-				} else if (lineType == "empty") {
-					ModelMap.addBalloon(activeLocation);
-					activeLocation = new Location();
-					System.out.println("Add Balloon, LAT: " + lat + "  LON: " + lon + "number of balloons" + i);
-					i++;
+	/**
+	 * Legacy entry point. Valid observations are also made available through
+	 * {@link #getObservations()}.
+	 */
+	public void storeValues(Path path) {
+		observations.clear();
+		try (var reader = Files.newBufferedReader(path)) {
+			String line;
+			while ((line = reader.readLine()) != null) {
+				if (line.startsWith("#")) {
+					finishSounding();
+					activeLocation = parseHeader(line);
+				} else if (activeLocation != null && !line.isEmpty() && line.charAt(0) == '1') {
+					Level level = parseLevelRecord(line);
+					if (level != null) storeLevel(activeLocation, level);
 				}
-
 			}
-			br.close();
-			fr.close();
-		} catch (IOException ioe) {
-			System.out.println("Exception thrown !!!" + ioe.getMessage());
+			finishSounding();
+		} catch (IOException ex) {
+			throw new IllegalStateException("Unable to read balloon data from " + path.toAbsolutePath(), ex);
 		}
+		if (observations.isEmpty()) {
+			throw new IllegalStateException("No valid sounding headers found in " + path.toAbsolutePath());
+		}
+		System.out.println("Loaded " + observations.size() + " sounding observations from " + path.toAbsolutePath());
+	}
 
+	public List<Location> getObservations() {
+		return List.copyOf(observations);
+	}
+
+	private void finishSounding() {
+		if (activeLocation == null) return;
+		if (activeLocation.getFiveHundred() != null && activeLocation.getFiveHundred().isForecastUsable()) {
+			observations.add(activeLocation);
+		}
+		activeLocation = null;
+	}
+
+	static Location parseHeader(String line) {
+		if (line.length() < 71) throw new IllegalArgumentException("Malformed IGRA header: " + line);
+		Location location = new Location(numberAt(line, 55, 62) / 10000.0,
+				numberAt(line, 63, 71) / 10000.0);
+		location.setStationId(line.substring(1, 12).trim());
+		try {
+			int year = (int) numberAt(line, 13, 17);
+			int month = (int) numberAt(line, 18, 20);
+			int day = (int) numberAt(line, 21, 23);
+			int hour = (int) numberAt(line, 24, 26);
+			location.setObservedAt(LocalDateTime.of(year, month, day, hour, 0).toInstant(ZoneOffset.UTC));
+		} catch (DateTimeException | NumberFormatException ignored) {
+			location.setObservedAt(null);
+		}
+		return location;
+	}
+
+	static Level parseLevelRecord(String line) {
+		if (line.length() < 51) return null;
+		Double pressure = field(line, 9, 15, 1.0);
+		Double height = field(line, 16, 21, 1.0);
+		Double temperatureC = field(line, 22, 27, 0.1);
+		Double humidity = field(line, 28, 33, 0.1);
+		Double dewPointDepression = field(line, 34, 39, 0.1);
+		Double direction = field(line, 40, 45, 1.0);
+		Double speed = field(line, 46, 51, 0.1);
+
+		if (pressure == null || height == null || temperatureC == null
+				|| direction == null || speed == null) return null;
+		if (speed < 0 || speed > 200 || direction < 0 || direction > 360) return null;
+		double temperatureK = temperatureC + 273.15;
+		Level level = new Level(pressure, height, speed, direction,
+				dewPointDepression, temperatureK, humidity);
+		return level.isForecastUsable() ? level : null;
+	}
+
+	private static Double field(String line, int start, int end, double scale) {
+		try {
+			double raw = numberAt(line, start, end);
+			return raw <= MISSING_LIMIT ? null : raw * scale;
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
+	private static double numberAt(String line, int start, int end) {
+		return Double.parseDouble(line.substring(start, end).trim());
+	}
+
+	private static void storeLevel(Location location, Level level) {
+		double pressure = level.getPressure();
+		if (pressure == 100000) location.setOneThousand(level);
+		else if (pressure == 92500) location.setNineTwentyFive(level);
+		else if (pressure == 85000) location.setEightFifty(level);
+		else if (pressure == 70000) location.setSevenHundred(level);
+		else if (pressure == 50000) location.setFiveHundred(level);
+		else if (pressure == 30000) location.setThreeHundred(level);
+		else if (pressure == 25000) location.setTwoFifty(level);
+		else if (pressure == 20000) location.setTwoHundred(level);
 	}
 
 	public void storeLevel(Level level) {
-		if (level.getPressure() == 92500) {
-			activeLocation.setNineTwentyFive(level);
-		} else if (level.getPressure() == 100000) {
-			activeLocation.setOneThousand(level);
-		} else if (level.getPressure() == 85000) {
-			activeLocation.setEightFifty(level);
-		} else if (level.getPressure() == 70000) {
-			activeLocation.setSevenHundred(level);
-		} else if (level.getPressure() == 50000) {
-			activeLocation.setFiveHundred(level);
-		} else if (level.getPressure() == 30000) {
-			activeLocation.setThreeHundred(level);
-		} else if (level.getPressure() == 25000) {
-			activeLocation.setTwoFifty(level);
-		} else if (level.getPressure() == 20000) {
-			activeLocation.setTwoHundred(level);
-		}
-
+		if (activeLocation != null && level != null) storeLevel(activeLocation, level);
 	}
 }

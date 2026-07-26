@@ -1,5 +1,7 @@
 package model;
 
+import java.time.Instant;
+
 public class Location {
 
 	private Level oneThousand;
@@ -12,19 +14,21 @@ public class Location {
 	private Level twoHundred;
 
 	private double latitude, longitude;
+	private String stationId;
+	private Instant observedAt;
 
 	private Position local = new Position();
 
 	public Location(double lat, double lng) {
-		setLongitude(lng);
-		setLatitude(lat);
-		setLocal(new Position(lat, lng));
+		this.longitude = lng;
+		this.latitude = lat;
+		this.local = new Position(lat, lng);
 	}
 
 	public Location(double lat, double lng, Location location) {
-		setLongitude(lng);
-		setLatitude(lat);
-		setLocal(new Position(lat, lng));
+		this.longitude = lng;
+		this.latitude = lat;
+		this.local = new Position(lat, lng);
 	}
 
 	public Location() {
@@ -120,6 +124,22 @@ public class Location {
 
 	public void setLocal(Position local) {
 		this.local = local;
+	}
+
+	public String getStationId() {
+		return stationId;
+	}
+
+	public void setStationId(String stationId) {
+		this.stationId = stationId;
+	}
+
+	public Instant getObservedAt() {
+		return observedAt;
+	}
+
+	public void setObservedAt(Instant observedAt) {
+		this.observedAt = observedAt;
 	}
 
 }
